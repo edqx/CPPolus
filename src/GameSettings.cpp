@@ -1,6 +1,6 @@
 #include "GameSettings.h"
 
-bool ReadGameSettings(BinaryReader reader, GameSettings* settings)
+bool ReadGameSettings(BinaryReader& reader, GameSettings* settings)
 {
 	size_t length;
 	reader.ReadPackedInt32((int*)&length);

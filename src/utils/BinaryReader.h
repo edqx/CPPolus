@@ -8,14 +8,12 @@
 class BinaryReader
 {
 public:
-	char* _bytes;
-	size_t _size;
-	size_t _cursor;
+	char* data;
+	size_t size;
+	size_t cursor;
 
-	BinaryReader(size_t size, char* bytes);
+	BinaryReader(size_t _size, char* _data);
 
-	char* data();
-	size_t size();
 	size_t left();
 
 	bool Goto(size_t pos);
@@ -26,7 +24,7 @@ public:
 	template<typename T>
 	bool Read(T* val, bool bigendian = false)
 	{
-		if (_cursor + sizeof T > _size)
+		if (cursor + sizeof T > size)
 			return false;
 
 #if IS_BIG_ENDIAN
@@ -41,14 +39,14 @@ public:
 #else
 		if (bigendian)
 		{
-			*val = switchbytes(*(T*)&_bytes[_cursor]);
+			*val = switchbytes(*(T*)&data[cursor]);
 		}
 		else
 		{
-			*val = *(T*)&_bytes[_cursor];
+			*val = *(T*)&data[cursor];
 		}
 #endif
-		_cursor += sizeof T;
+		cursor += sizeof T;
 
 		return true;
 	}

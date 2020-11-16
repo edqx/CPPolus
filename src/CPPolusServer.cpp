@@ -1,6 +1,7 @@
 #include "CPPolusServer.h"
 
 #define BUFLEN 512
+#define PING_INTERVAL 1500
 
 std::string getaddr(sockaddr_in remote)
 {
@@ -17,11 +18,10 @@ std::string getaddr(sockaddr_in remote)
 
 CPPolusServer::CPPolusServer()
 {
-	pinging = false;
-	connected = false;
+	_connected = false;
 	host = 0;
 	port = 22023;
-	clientid_incr = 0;
+	_clientid_incr = 0;
 	sock = 0;
 }
 
@@ -56,7 +56,7 @@ bool CPPolusServer::Bind(unsigned short _port, char* _host)
 	}
 
 	printf("[WIN] Binded socket to port %i.\n", _port);
-	connected = true;
+	_connected = true;
 
 	return true;
 }
@@ -67,67 +67,63 @@ bool CPPolusServer::Listen()
 
 	BeginPing();
 
+
+	std::thread([this]()
+	{
+		while (_connected)
+		{
+
+		}
+	}).detach();
+
 	char buf[BUFLEN];
 	struct sockaddr_in remote;
 	int slen = sizeof(remote);
 	while (true)
 	{
-		memset(buf, 0, BUFLEN);
-		if (recvfrom(sock, buf, BUFLEN, 0, (struct sockaddr*)&remote, &slen) == SOCKET_ERROR)
+		int blen = recvfrom(sock, buf, BUFLEN, 0, (struct sockaddr*)&remote, &slen);
+
+		if (blen == SOCKET_ERROR)
 		{
 			printf("recvfrom() failed with error code : %d", WSAGetLastError());
-			return false;
+			continue;
 		}
 
-		OnMessageReceived(remote, buf);
+		OnMessageReceived(remote, buf, blen);
 	}
 }
 
 bool CPPolusServer::BeginPing()
 {
-	if (!sock || !connected || pinging)
+	if (!sock || !_connected)
 		return false;
 
-	pinging = true;
 	std::thread([this]()
 	{
-		while (pinging)
+		while (_connected)
 		{
-			auto x = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+			auto x = std::chrono::steady_clock::now() + std::chrono::milliseconds(PING_INTERVAL);
 
 			std::map<sockaddr_in, RemoteClient>::iterator it = remotes.begin();
 			while (it != remotes.end())
 			{
-				BinaryWriter writer(3);
-				writer.Write((char)Opcode_Ping);
-				writer.Write(_byteswap_ushort(it->second.nonce()));
+				it->second.writer.BeginPacket(Opcode_Ping);
+				it->second.writer.Write(_byteswap_ushort(it->second.nonce()));
 
-				SendTo(it->second, writer);
+				SendTo(it->second);
 				it++;
 			}
 
 			std::this_thread::sleep_until(x);
 		}
-
-		std::terminate();
 	}).detach();
-
-	return true;
-}
-
-bool CPPolusServer::StopPing()
-{
-	if (!sock || !connected || !pinging)
-		return false;
-
-	pinging = false;
 
 	return true;
 }
 
 bool CPPolusServer::IdentifyClient(RemoteClient& client, std::string username, int version)
 {
-	clientid_incr++;
+	_clientid_incr++;
 
 	client.identified = true;
 	client.username = username;
@@ -138,9 +134,9 @@ bool CPPolusServer::IdentifyClient(RemoteClient& client, std::string username, i
 	return true;
 }
 
-bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes)
+bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes, int bytes_received)
 {
-	BinaryReader reader(BUFLEN, bytes);
+	BinaryReader reader(bytes_received, bytes);
 
 	char op;
 	reader.Read(&op);
@@ -163,7 +159,7 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes)
 		break;
 	}
 	case Opcode_Hello: {
-		printf("Rece1ived hello from %s:%d\n", inet_ntoa(remote.sin_addr), ntohs(remote.sin_port));
+		printf("Received hello from %s:%d\n", inet_ntoa(remote.sin_addr), ntohs(remote.sin_port));
 		if (!client.identified)
 		{
 			unsigned short nonce;
@@ -188,6 +184,7 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes)
 			Disconnect(client, Disconnect_NoReason);
 		}
 
+		free(client.writer.data);
 		remotes.erase(remotes.find(remote));
 		break;
 	}
@@ -200,11 +197,14 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes)
 
 		SetAcknowledged(client, _byteswap_ushort(nonce));
 
-		for (int i = 0; i < 8; i++)
+		for (size_t i = 0; i < 8; i++)
 		{
-			if (((1 << i) & missing) == 0)
+			if (i < client.sent.size() &&
+				((1 << i) & missing) == 0)
 			{
-				Acknowledge(client, nonce);
+				PendingTransmittedPacket sent = client.sent[i];
+
+				Acknowledge(client, sent.nonce);
 			}
 		}
 		break;
@@ -229,6 +229,8 @@ bool CPPolusServer::ParsePayload(RemoteClient& client, BinaryReader& reader)
 	reader.Read(&payloadlen);
 	reader.Read(&tag);
 
+	size_t payload_start = reader.cursor;
+
 	switch (tag)
 	{
 	case Tag_HostGame:
@@ -241,6 +243,12 @@ bool CPPolusServer::ParsePayload(RemoteClient& client, BinaryReader& reader)
 
 			Room room{ code, settings, false };
 			rooms.insert(std::make_pair(code, room));
+
+			client.writer.BeginPacket(Opcode_Reliable);
+			client.writer.BeginPayload(Tag_HostGame);
+			client.writer.Write(code);
+
+			SendTo(client);
 		}
 		break;
 	case Tag_JoinGame:
@@ -281,49 +289,68 @@ bool CPPolusServer::ParsePayload(RemoteClient& client, BinaryReader& reader)
 		break;
 	}
 
-	return true;
-}
-
-bool CPPolusServer::SendTo(RemoteClient& client, const char* buf, unsigned int size)
-{
-	if (sendto(sock, buf, size, 0, (struct sockaddr*)&client.remote, sizeof(client.remote)) == SOCKET_ERROR)
-		return false;
+	reader.Goto(payload_start + payloadlen);
 
 	return true;
 }
 
-bool CPPolusServer::SendTo(RemoteClient& client, BinaryWriter& writer)
+bool CPPolusServer::SendTo(RemoteClient& client, unsigned char* buf, unsigned int size)
 {
-	if (!SendTo(client, writer.data(), writer.size()))
+	if (sendto(sock, reinterpret_cast<const char*>(buf), size, 0, (struct sockaddr*)client.remote, sizeof(*client.remote)) == SOCKET_ERROR)
+	{
+		printf("Error sending packet: %i\n", WSAGetLastError());
 		return false;
+	}
 
 	return true;
 }
 
-/* bool CPPolusServer::SendAndWait(RemoteClient client, const char* buf, unsigned int size, unsigned short nonce)
+bool CPPolusServer::SendTo(RemoteClient& client)
 {
-	if (sendto(sock, buf, size, 0, (struct sockaddr*)&client.remote, sizeof(client.remote)) == SOCKET_ERROR)
+	client.writer.FitToSize();
+
+	if (!SendTo(client, client.writer.data, client.writer.size))
+	{
+		client.writer.clear();
 		return false;
+	}
+
+	client.writer.clear();
+	return true;
+}
+
+bool CPPolusServer::SendRepeat(RemoteClient& client, unsigned char* buf, size_t size, unsigned short nonce)
+{
+	if (!(SendTo(client, buf, size)))
+		return false;
+
+	PendingTransmittedPacket packet = AppendSentReliable(client, nonce);
+	pending.push_back(std::make_pair(client, packet));
 
 	return true;
 }
 
-bool CPPolusServer::SendAndWait(RemoteClient client, BinaryWriter writer, unsigned short nonce)
+bool CPPolusServer::SendRepeat(RemoteClient& client, unsigned short nonce)
 {
-	if (!SendAndWait(client, writer.data(), writer.size(), nonce))
-		return false;
+	client.writer.FitToSize();
 
+	if (!SendRepeat(client, client.writer.data, client.writer.size, nonce))
+	{
+		client.writer.clear();
+		return false;
+	}
+
+	client.writer.clear();
 	return true;
-} */
+}
 
 bool CPPolusServer::Acknowledge(RemoteClient& client, unsigned short nonce)
 {
-	BinaryWriter writer(4);
-	writer.Write((char)Opcode_Acknowledge);
-	writer.Write(_byteswap_ushort(nonce));
-	writer.Write(CalculateMissing(client));
+	client.writer.BeginPacket(Opcode_Acknowledge);
+	client.writer.Write(_byteswap_ushort(nonce));
+	client.writer.Write(CalculateMissing(client));
 
-	return SendTo(client, writer);
+	return SendTo(client);
 }
 
 bool CPPolusServer::SetAcknowledged(RemoteClient& client, unsigned short nonce)
@@ -340,28 +367,30 @@ bool CPPolusServer::SetAcknowledged(RemoteClient& client, unsigned short nonce)
 	return false;
 }
 
-bool CPPolusServer::AppendSentReliable(RemoteClient& client, unsigned short nonce)
+PendingTransmittedPacket CPPolusServer::AppendSentReliable(RemoteClient& client, unsigned short nonce)
 {
-	client.sent.push_front(PendingTransmittedPacket{ nonce, false });
+	PendingTransmittedPacket packet{ nonce, false };
+	client.sent.push_front(packet);
 
 	if (client.sent.size() > 8)
 	{
 		client.sent.pop_back();
 	}
 
-	return true;
+	return packet;
 }
 
-bool CPPolusServer::AppendReceivedReliable(RemoteClient& client, unsigned short nonce)
+PendingTransmittedPacket CPPolusServer::AppendReceivedReliable(RemoteClient& client, unsigned short nonce)
 {
-	client.received.push_front(PendingTransmittedPacket{ nonce, false });
+	PendingTransmittedPacket packet{ nonce, false };
+	client.received.push_front(packet);
 
 	if (client.received.size() > 8)
 	{
 		client.received.pop_back();
 	}
 
-	return true;
+	return packet;
 }
 
 unsigned char CPPolusServer::CalculateMissing(RemoteClient& client)
@@ -405,12 +434,12 @@ bool CPPolusServer::GetOrCreateClient(sockaddr_in& remote, RemoteClient* client)
 {
 	if (remotes.count(remote) == 0)
 	{
-		clientid_incr++;
+		_clientid_incr++;
 
-		if (clientid_incr < 0)
-			clientid_incr = 1;
+		if (_clientid_incr < 0)
+			_clientid_incr = 1;
 
-		*client = RemoteClient(&remote, clientid_incr);
+		*client = RemoteClient(&remote, _clientid_incr);
 		remotes.insert(std::make_pair(remote, *client));
 
 		return true;

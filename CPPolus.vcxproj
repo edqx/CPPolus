@@ -72,9 +72,11 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
+    <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
@@ -143,6 +145,66 @@
     <ClInclude Include="src\constants\Enums.h" />
     <ClInclude Include="src\CPPolusServer.h" />
     <ClInclude Include="src\GameSettings.h" />
+    <ClInclude Include="src\packets\Acknowledge.h" />
+    <ClInclude Include="src\packets\Disconnect.h" />
+    <ClInclude Include="src\packets\Hello.h" />
+    <ClInclude Include="src\packets\Packet.h" />
+    <ClInclude Include="src\packets\Payloadable.h" />
+    <ClInclude Include="src\packets\payloads\AlterGame.h" />
+    <ClInclude Include="src\packets\payloads\EndGame.h" />
+    <ClInclude Include="src\packets\payloads\GameData.h" />
+    <ClInclude Include="src\packets\payloads\GameDataTo.h" />
+    <ClInclude Include="src\packets\payloads\GetGameList.h" />
+    <ClInclude Include="src\packets\payloads\HostGame.h" />
+    <ClInclude Include="src\packets\payloads\JoinedGame.h" />
+    <ClInclude Include="src\packets\payloads\JoinGame.h" />
+    <ClInclude Include="src\packets\payloads\KickPlayer.h" />
+    <ClInclude Include="src\packets\payloads\messages\ChangeSettings.h" />
+    <ClInclude Include="src\packets\payloads\messages\Data.h" />
+    <ClInclude Include="src\packets\payloads\messages\Despawn.h" />
+    <ClInclude Include="src\packets\payloads\messages\Ready.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\AddVote.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\CastVote.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\CheckColour.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\CheckName.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\ClearVote.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\Close.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\CloseDoorsOfType.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\CompleteTask.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\EnterVent.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\Exiled.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\ExitVent.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\MurderPlayer.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\PlayAnimation.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\RepairSystem.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\ReportDeadBody.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SendChat.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SendChatNote.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SetColour.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SetHat.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SetInfected.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SetName.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SetPet.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SetScanner.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SetSkin.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SetStartCounter.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SetTasks.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SnapTo.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\StartMeeting.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\SyncSettings.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\UpdateGameData.h" />
+    <ClInclude Include="src\packets\payloads\messages\rpc\VotingComplete.h" />
+    <ClInclude Include="src\packets\payloads\messages\SceneChange.h" />
+    <ClInclude Include="src\packets\payloads\messages\Spawn.h" />
+    <ClInclude Include="src\packets\payloads\Payload.h" />
+    <ClInclude Include="src\packets\payloads\Redirect.h" />
+    <ClInclude Include="src\packets\payloads\RemoveGame.h" />
+    <ClInclude Include="src\packets\payloads\RemovePlayer.h" />
+    <ClInclude Include="src\packets\payloads\ReselectServer.h" />
+    <ClInclude Include="src\packets\payloads\StartGame.h" />
+    <ClInclude Include="src\packets\Ping.h" />
+    <ClInclude Include="src\packets\Unreliable.h" />
+    <ClInclude Include="src\PacketWriter.h" />
     <ClInclude Include="src\RemoteClient.h" />
     <ClInclude Include="src\Room.h" />
     <ClInclude Include="src\utils\BinaryReader.h" />
@@ -155,6 +217,8 @@
   <ItemGroup>
     <ClCompile Include="src\CPPolusServer.cpp" />
     <ClCompile Include="src\GameSettings.cpp" />
+    <ClCompile Include="src\packets\Reliable.h" />
+    <ClCompile Include="src\PacketWriter.cpp" />
     <ClCompile Include="src\RemoteClient.cpp" />
     <ClCompile Include="src\utils\BinaryReader.cpp" />
     <ClCompile Include="src\utils\BinaryWriter.cpp" />

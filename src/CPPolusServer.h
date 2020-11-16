@@ -3,6 +3,7 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS 1
 
 #include <map>
+#include <vector>
 #include <iostream>
 #include <sstream>
 #include <winsock2.h>
@@ -19,6 +20,7 @@
 #include "constants/Enums.h"
 
 #include "RemoteClient.h"
+#include "PacketWriter.h"
 #include "Room.h"
 
 #pragma comment(lib, "ws2_32.lib")
@@ -39,41 +41,46 @@ inline bool operator<(const sockaddr_in& first, const sockaddr_in& second)
 
 class CPPolusServer : public Singleton<CPPolusServer>
 {
-	bool pinging;
-
-	bool IdentifyClient(RemoteClient& client, std::string username, int version);
-
-	bool OnMessageReceived(sockaddr_in& remote, char* bytes);
-	bool ParsePayload(RemoteClient& remote, BinaryReader& reader);
-	bool ParseMessage(RemoteClient& remote, BinaryReader& reader);
-	bool GetOrCreateClient(sockaddr_in& remote, RemoteClient* client);
-
-	void Recv(int& size, char);
-public:
 	char* host;
 	unsigned short port;
+
+	bool _connected;
+	int _clientid_incr;
+	SOCKET sock;
+
 	std::map<sockaddr_in, RemoteClient> remotes{};
 	std::map<int, Room> rooms{};
 
-	bool connected;
-	int clientid_incr;
-	SOCKET sock;
+	std::vector<std::pair<RemoteClient, PendingTransmittedPacket>> pending;
 
+	bool IdentifyClient(RemoteClient& client, std::string username, int version);
+
+	bool OnMessageReceived(sockaddr_in& remote, char* bytes, int bytes_received);
+	bool ParsePayload(RemoteClient& remote, BinaryReader& reader);
+	bool ParseMessage(RemoteClient& remote, BinaryReader& reader);
+	bool GetOrCreateClient(sockaddr_in& remote, RemoteClient* client);
+	bool BeginPing();
+
+	bool Acknowledge(RemoteClient& client, unsigned short nonce);
+	bool SetAcknowledged(RemoteClient& client, unsigned short nonce);
+	PendingTransmittedPacket AppendSentReliable(RemoteClient& client, unsigned short nonce);
+	PendingTransmittedPacket AppendReceivedReliable(RemoteClient& client, unsigned short nonce);
+
+	unsigned char CalculateMissing(RemoteClient& client);
+
+	bool PlayerJoin(Room& room, RemoteClient& client);
+public:
 	CPPolusServer();
 
 	bool Bind(unsigned short _port = 22023, char _host[4] = { 0 });
 	bool Listen();
-	bool BeginPing();
-	bool StopPing();
 
-	bool SendTo(RemoteClient& client, const char* buf, unsigned int size);
-	bool SendTo(RemoteClient& client, BinaryWriter& writer);
-	/* bool SendAndWait(RemoteClient client, const char* buf, unsigned int size, unsigned short nonce);
-	   bool SendAndWait(RemoteClient client, BinaryWriter writer, unsigned short nonce); */
-	bool Acknowledge(RemoteClient& client, unsigned short nonce);
-	bool SetAcknowledged(RemoteClient& client, unsigned short nonce);
-	bool AppendSentReliable(RemoteClient& client, unsigned short nonce);
-	bool AppendReceivedReliable(RemoteClient& client, unsigned short nonce);
-	unsigned char CalculateMissing(RemoteClient& client);
+	bool SendTo(RemoteClient& client, unsigned char* buf, size_t size);
+	bool SendTo(RemoteClient& client);
+	bool Broadcast(std::map<int, ClientData> clients, unsigned char* buf, size_t size);
+	bool Broadcast(std::map<int, ClientData> clients, PacketWriter& packet);
+	bool Broadcast(std::map<int, ClientData> clients);
+	bool SendRepeat(RemoteClient& client, unsigned char* buf, size_t size, unsigned short nonce);
+	bool SendRepeat(RemoteClient& client, unsigned short nonce);
 	bool Disconnect(RemoteClient& client, char reason = 0, std::string message = "");
 };

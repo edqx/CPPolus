@@ -28,4 +28,4 @@ struct GameSettings
 	bool taskBarUpdates;
 };
 
-bool ReadGameSettings(BinaryReader reader, GameSettings* settings);
+bool ReadGameSettings(BinaryReader& reader, GameSettings* settings);

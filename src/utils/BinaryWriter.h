@@ -7,22 +7,24 @@
 
 class BinaryWriter
 {
+	size_t original_sz;
 	bool _dynamic;
 public:
-	char* _bytes;
-	int _size;
-	int _cursor;
+	unsigned char* data;
+	size_t size;
+	size_t cursor;
+	size_t written;
 
-	BinaryWriter(int size, bool dynamic = false);
+	BinaryWriter(size_t _size, bool dynamic = false);
 
-	bool Expand(int bytes);
+	bool clear();
 
-	int size();
-	bool dynamic();
-	char* data();
+	bool Realloc(size_t size);
+	bool Expand(size_t bytes);
+	bool FitToSize();
 
-	bool Goto(int pos);
-	bool Jump(int bytes);
+	bool Goto(size_t pos);
+	bool Jump(size_t bytes);
 
 	bool WriteString(std::string string);
 	bool Write(BinaryWriter writer);
@@ -36,9 +38,10 @@ public:
 #if IS_BIG_ENDIAN
 		memcpy(_bytes + _cursor, switchbytes(&val), sizeof T);
 #else
-		memcpy(_bytes + _cursor, &val, sizeof T);
+		memcpy(data + cursor, &val, sizeof T);
 #endif
-		_cursor += sizeof T;
+		cursor += sizeof T;
+		written += sizeof T;
 
 		return true;
 	}

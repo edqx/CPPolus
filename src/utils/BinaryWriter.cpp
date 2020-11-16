@@ -1,78 +1,90 @@
 #include "BinaryWriter.h"
 
-BinaryWriter::BinaryWriter(int size, bool dynamic)
+BinaryWriter::BinaryWriter(size_t _size, bool dynamic)
 {
-	_size = size;
-	_bytes = (char*)malloc(size);
-	_cursor = 0;
+	original_sz = _size;
+	size = _size;
+	data = (unsigned char*)malloc(size);
+	cursor = 0;
+	written = 0;
 	_dynamic = dynamic;
 }
 
-bool BinaryWriter::Expand(int bytes)
+bool BinaryWriter::clear()
 {
-	int new_pos = _cursor + bytes;
+	if (!Realloc(original_sz))
+		return false;
 
-	if (new_pos <= _size)
+	memset(data, 0, original_sz);
+	written = 0;
+	cursor = 0;
+
+	return true;
+}
+
+bool BinaryWriter::Realloc(size_t bytes)
+{
+	void* new_bytes = realloc(data, bytes);
+
+	if (!new_bytes)
+		return false;
+
+	data = (unsigned char*)new_bytes;
+	size = bytes;
+
+	return true;
+}
+
+bool BinaryWriter::Expand(size_t bytes)
+{
+	size_t new_pos = cursor + bytes;
+
+	if (new_pos <= size)
 		return true;
 
 	if (!_dynamic)
 		return false;
 
-	void* new_bytes = realloc(_bytes, new_pos);
-
-	if (!new_bytes)
-		return false;
-
-	_bytes = (char*)new_bytes;
-	_size = new_pos;
+	Realloc(bytes);
 
 	return true;
 }
 
-int BinaryWriter::size()
+bool BinaryWriter::Goto(size_t pos)
 {
-	return _size;
-}
-
-bool BinaryWriter::dynamic()
-{
-	return _dynamic;
-}
-
-char* BinaryWriter::data()
-{
-	return _bytes;
-}
-
-bool BinaryWriter::Goto(int pos)
-{
-	if (pos > _size)
+	if (pos > size)
 		return false;
 
-	_cursor = pos;
+	cursor = pos;
 	return true;
 }
 
-bool BinaryWriter::Jump(int bytes)
+bool BinaryWriter::Jump(size_t bytes)
 {
-	if (_cursor + bytes > _size)
+	if (cursor + bytes > size)
 		return false;
 
-	_cursor += bytes;
+	cursor += bytes;
 	return true;
+}
+
+bool BinaryWriter::FitToSize()
+{
+	return Realloc(written);
 }
 
 bool BinaryWriter::Write(BinaryWriter writer)
 {
-	if (!Expand(writer.size()))
+	if (!Expand(writer.size))
 		return false;
 
 #if IS_BIG_ENDIAN
-	memcpy((void*)&_bytes[_cursor], switchbytes(writer.data()), writer.size());
+	memcpy((void*)&_bytes[_cursor], switchbytes(writer.data), writer.size);
 #else
-	memcpy((void*)&_bytes[_cursor], writer.data(), writer.size());
+	memcpy((void*)&data[cursor], writer.data, writer.size);
 #endif
-	_cursor += writer.size();
+	cursor += writer.size;
+	written += writer.size;
 
 	return true;
 }
@@ -84,7 +96,7 @@ bool BinaryWriter::WriteString(std::string val)
 	if (!writer.WritePackedInt32(length))
 		return false;
 
-	if (!Expand(sizeof(length) + writer.size()))
+	if (!Expand(sizeof(length) + writer.size))
 		return false;
 
 	Write(writer);

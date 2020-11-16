@@ -1,44 +1,36 @@
 #include "BinaryReader.h"
 
-BinaryReader::BinaryReader(size_t size, char* bytes)
-{
-	_bytes = bytes;
-	_size = size;
-	_cursor = 0;
-}
+#define max(a, b) ((a) >= (b) ? (a) : (b))
 
-char* BinaryReader::data()
+BinaryReader::BinaryReader(size_t _size, char* _data)
 {
-	return _bytes;
-}
-
-size_t BinaryReader::size()
-{
-	return _size;
+	data = _data;
+	size = _size;
+	cursor = 0;
 }
 
 size_t BinaryReader::left()
 {
-	return _size - _cursor;
+	return max(size - cursor, 0);
 }
 
 
 bool BinaryReader::Goto(size_t pos)
 {
-	if (pos >= _size)
+	if (pos > size)
 		return false;
 
-	_cursor = pos;
+	cursor = pos;
 
 	return true;
 }
 
 bool BinaryReader::Jump(size_t bytes)
 {
-	if (_cursor + bytes > _size)
+	if (cursor + bytes > size)
 		return false;
 
-	_cursor += bytes;
+	cursor += bytes;
 
 	return true;
 }
@@ -50,7 +42,7 @@ bool BinaryReader::ReadString(std::string* val)
 	if (!ReadPackedInt32(&length))
 		return false;
 
-	if (_cursor + length > _size)
+	if (cursor + length > size)
 		return false;
 
 	std::string result;

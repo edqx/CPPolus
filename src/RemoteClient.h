@@ -4,10 +4,14 @@
 #include <winsock2.h>
 #include <deque>
 
+#include "PacketWriter.h"
+
 struct PendingTransmittedPacket
 {
 	unsigned short nonce;
 	bool received;
+	size_t datalen;
+	unsigned char* data;
 };
 
 struct RemoteClient
@@ -25,6 +29,8 @@ struct RemoteClient
 	
 	std::deque<PendingTransmittedPacket> sent;
 	std::deque<PendingTransmittedPacket> received;
+
+	PacketWriter writer = PacketWriter(512);
 
 	RemoteClient();
 	RemoteClient(sockaddr_in* _remote, unsigned int _clientid);
