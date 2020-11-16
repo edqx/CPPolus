@@ -30,15 +30,31 @@ public:
 	bool Write(BinaryWriter writer);
 
 	template<typename T>
-	bool Write(T val)
+	bool Write(T val, bool bigendian = false)
 	{
 		if (!Expand(sizeof T))
 			return false;
 
 #if IS_BIG_ENDIAN
-		memcpy(_bytes + _cursor, switchbytes(&val), sizeof T);
+		if (bigendian)
+		{
+			memcpy(data + cursor, &val, sizeof T);
+		}
+		else
+		{
+			T switched = switchbytes(val);
+			memcpy(data + cursor, &switched, sizeof T);
+		}
 #else
-		memcpy(data + cursor, &val, sizeof T);
+		if (bigendian)
+		{
+			T switched = switchbytes(val);
+			memcpy(data + cursor, &switched, sizeof T);
+		}
+		else
+		{
+			memcpy(data + cursor, &val, sizeof T);
+		}
 #endif
 		cursor += sizeof T;
 		written += sizeof T;

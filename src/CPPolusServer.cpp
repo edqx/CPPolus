@@ -108,7 +108,7 @@ bool CPPolusServer::BeginPing()
 			while (it != remotes.end())
 			{
 				it->second.writer.BeginPacket(Opcode_Ping);
-				it->second.writer.Write(_byteswap_ushort(it->second.nonce()));
+				it->second.writer.Write(it->second.nonce(), true);
 
 				SendTo(it->second);
 				it++;
@@ -192,10 +192,10 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes, int byte
 		unsigned short nonce;
 		unsigned char missing;
 
-		reader.Read(&nonce);
+		reader.Read(&nonce, true);
 		reader.Read(&missing);
 
-		SetAcknowledged(client, _byteswap_ushort(nonce));
+		SetAcknowledged(client, nonce);
 
 		for (size_t i = 0; i < 8; i++)
 		{
@@ -245,8 +245,10 @@ bool CPPolusServer::ParsePayload(RemoteClient& client, BinaryReader& reader)
 			rooms.insert(std::make_pair(code, room));
 
 			client.writer.BeginPacket(Opcode_Reliable);
+			client.writer.Write(client.nonce(), true);
 			client.writer.BeginPayload(Tag_HostGame);
 			client.writer.Write(code);
+			client.writer.End();
 
 			SendTo(client);
 		}
@@ -347,7 +349,7 @@ bool CPPolusServer::SendRepeat(RemoteClient& client, unsigned short nonce)
 bool CPPolusServer::Acknowledge(RemoteClient& client, unsigned short nonce)
 {
 	client.writer.BeginPacket(Opcode_Acknowledge);
-	client.writer.Write(_byteswap_ushort(nonce));
+	client.writer.Write(nonce, true);
 	client.writer.Write(CalculateMissing(client));
 
 	return SendTo(client);

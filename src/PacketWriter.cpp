@@ -7,20 +7,20 @@ bool PacketWriter::BeginPacket(char opcode)
 
 bool PacketWriter::BeginPayload(char tag)
 {
-	len_stack.push_back(cursor);
-
 	if (!Jump(0x02))
 		return false;
+
+	len_stack.push_back(cursor);
 
 	return Write(tag);
 }
 
 bool PacketWriter::BeginMessage(char type)
 {
-	len_stack.push_back(cursor);
-
 	if (!Jump(0x02))
 		return false;
+
+	len_stack.push_back(cursor);
 
 	return Write(type);
 }
@@ -32,10 +32,10 @@ bool PacketWriter::End()
 
 	size_t curpos = cursor;
 	size_t stackpos = len_stack.back();
-	if (!Goto(stackpos))
+	if (!Goto(stackpos - 2))
 		return false;
 
-	if (!Write((short)(curpos - stackpos)))
+	if (!Write((short)(curpos - stackpos - 1)))
 		return false;
 
 	return Goto(curpos);

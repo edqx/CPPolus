@@ -5,8 +5,16 @@
 template<typename T>
 T switchbytes(T val)
 {
-	char* temp = (char*)&val;
-	std::reverse(temp, temp + sizeof(val));
+	char* temp = (char*)malloc(sizeof T);
+	if (temp)
+	{
+		memcpy(temp, &val, sizeof T);
+		std::reverse(temp, temp + sizeof(val));
 
-	return *(T*)temp;
+		return *(T*)temp;
+	}
+	else
+	{
+		return 0;
+	}
 }
