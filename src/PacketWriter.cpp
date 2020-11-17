@@ -32,6 +32,7 @@ bool PacketWriter::End()
 
 	size_t curpos = cursor;
 	size_t stackpos = len_stack.back();
+	len_stack.pop_back();
 	if (!Goto(stackpos - 2))
 		return false;
 

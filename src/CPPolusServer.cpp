@@ -1,7 +1,7 @@
 #include "CPPolusServer.h"
 
 #define BUFLEN 512
-#define PING_INTERVAL 1500
+#define PING_INTERVAL 1000
 
 std::string getaddr(sockaddr_in remote)
 {
@@ -85,7 +85,19 @@ bool CPPolusServer::Listen()
 
 		if (blen == SOCKET_ERROR)
 		{
-			printf("recvfrom() failed with error code : %d", WSAGetLastError());
+			int err = WSAGetLastError();
+			if (err == 10054)
+			{
+				RemoteClient client;
+				GetOrCreateClient(remote, &client);
+				free(client.writer.data);
+				remotes.erase(remotes.find(remote));
+				printf("Received socket close from %s\n", getaddr(remote).c_str());
+			}
+			else
+			{
+				printf("recvfrom() failed with error code : %d\n", WSAGetLastError());
+			}
 			continue;
 		}
 
@@ -110,7 +122,7 @@ bool CPPolusServer::BeginPing()
 				it->second.writer.BeginPacket(Opcode_Ping);
 				it->second.writer.Write(it->second.nonce(), true);
 
-				SendTo(it->second);
+				SendTo(&it->second);
 				it++;
 			}
 
@@ -121,15 +133,15 @@ bool CPPolusServer::BeginPing()
 	return true;
 }
 
-bool CPPolusServer::IdentifyClient(RemoteClient& client, std::string username, int version)
+bool CPPolusServer::IdentifyClient(RemoteClient* client, std::string username, int version)
 {
 	_clientid_incr++;
 
-	client.identified = true;
-	client.username = username;
-	client.version = version;
+	client->identified = true;
+	client->username = username;
+	client->version = version;
 
-	printf("Identified %s as %s (Version %s)\n", getaddr(*client.remote).c_str(), username.c_str(), FormatVersion(version).c_str());
+	printf("Identified %s as %s (Version %s)\n", getaddr(*client->remote).c_str(), username.c_str(), FormatVersion(version).c_str());
 
 	return true;
 }
@@ -150,11 +162,32 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes, int byte
 	case Opcode_Reliable: {
 		unsigned short nonce;
 		reader.Read(&nonce, true);
-		Acknowledge(client, nonce);
+		Acknowledge(&client, nonce);
 	case Opcode_Unreliable:
 		while (reader.left())
 		{
-			ParsePayload(client, reader);
+			unsigned short payloadlen;
+			unsigned char tag;
+
+			reader.Read(&payloadlen);
+			reader.Read(&tag);
+
+			char* message = (char*)malloc(payloadlen);
+
+			if (message)
+			{
+				size_t payloadstart = reader.cursor;
+
+				if (reader.ReadMessage(payloadlen, message))
+				{
+					BinaryReader msgreader(payloadlen, message);
+
+					ParsePayload(&client, payloadlen, tag, msgreader);
+				}
+
+				reader.Goto(payloadstart + payloadlen);
+				free(message);
+			}
 		}
 		break;
 	}
@@ -171,9 +204,9 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes, int byte
 			reader.Read(&version);
 			reader.ReadString(&username);
 
-			if (IdentifyClient(client, username, version))
+			if (IdentifyClient(&client, username, version))
 			{
-				Acknowledge(client, nonce);
+				Acknowledge(&client, nonce);
 			}
 		}
 		break;
@@ -181,7 +214,7 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes, int byte
 	case Opcode_Disconnect: {
 		if (!client.sent_disconnect)
 		{
-			Disconnect(client, Disconnect_NoReason);
+			Disconnect(&client, Disconnect_NoReason);
 		}
 
 		free(client.writer.data);
@@ -195,7 +228,7 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes, int byte
 		reader.Read(&nonce, true);
 		reader.Read(&missing);
 
-		SetAcknowledged(client, nonce);
+		SetAcknowledged(&client, nonce);
 
 		for (size_t i = 0; i < 8; i++)
 		{
@@ -204,7 +237,7 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes, int byte
 			{
 				PendingTransmittedPacket sent = client.sent[i];
 
-				Acknowledge(client, sent.nonce);
+				Acknowledge(&client, sent.nonce);
 			}
 		}
 		break;
@@ -213,7 +246,7 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes, int byte
 		unsigned short nonce;
 		reader.Read(&nonce, true);
 
-		Acknowledge(client, nonce);
+		Acknowledge(&client, nonce);
 		break;
 	}
 	}
@@ -221,19 +254,12 @@ bool CPPolusServer::OnMessageReceived(sockaddr_in& remote, char* bytes, int byte
 	return true;
 }
 
-bool CPPolusServer::ParsePayload(RemoteClient& client, BinaryReader& reader)
+bool CPPolusServer::ParsePayload(RemoteClient* client, unsigned short payloadlen, unsigned short tag, BinaryReader& reader)
 {
-	unsigned short payloadlen;
-	unsigned char tag;
-
-	reader.Read(&payloadlen);
-	reader.Read(&tag);
-
-	size_t payload_start = reader.cursor;
-
 	switch (tag)
 	{
 	case Tag_HostGame:
+	{
 		GameSettings settings;
 		if (ReadGameSettings(reader, &settings))
 		{
@@ -244,25 +270,95 @@ bool CPPolusServer::ParsePayload(RemoteClient& client, BinaryReader& reader)
 			Room room{ code, settings, false };
 			rooms.insert(std::make_pair(code, room));
 
-			client.writer.BeginPacket(Opcode_Reliable);
-			client.writer.Write(client.nonce(), true);
-			client.writer.BeginPayload(Tag_HostGame);
-			client.writer.Write(code);
-			client.writer.End();
+			client->writer.BeginPacket(Opcode_Reliable);
+			client->writer.Write(client->nonce(), true);
+			client->writer.BeginPayload(Tag_HostGame);
+			client->writer.Write(code);
+			client->writer.End();
 
 			SendTo(client);
 		}
 		break;
+	}
 	case Tag_JoinGame:
+	{
+		int code;
+		char mapOwnership;
+
+		reader.Read(&code);
+		reader.Read(&mapOwnership);
+
+		std::map<int, Room>::iterator found_room_it = rooms.find(code);
+
+		if (found_room_it == rooms.end())
+			return JoinError(client, Disconnect_GameNotFound);
+
+		Room& found_room = found_room_it->second;
+
+		if (found_room.clients.size() >= found_room.settings.maxPlayers)
+			return JoinError(client, Disconnect_GameFull);
+
+		if (found_room.started)
+			return JoinError(client, Disconnect_GameStarted);
+
+		found_room.clients.insert(std::make_pair(client->clientid, ClientData{ client }));
+
+		if (found_room.clients.size() == 1)
+		{
+			found_room.hostid = client->clientid;
+		}
+
+		BinaryWriter joinGameWriter(12);
+		joinGameWriter.Write(code);
+		joinGameWriter.Write(client->clientid);
+		joinGameWriter.Write(found_room.hostid);
+
+		client->writer.BeginPacket(Opcode_Reliable);
+		client->writer.Write(client->nonce(), true);
+		client->writer.BeginPayload(Tag_JoinedGame);
+		client->writer.Write(code);
+		client->writer.Write(client->clientid);
+		client->writer.Write(found_room.hostid);
+		client->writer.WritePackedInt32(found_room.clients.size() - 1);
+
+		for (std::map<int, ClientData>::iterator it = found_room.clients.begin(); it != found_room.clients.end(); it++)
+		{
+			RemoteClient* send_client = it->second.client;
+			if (send_client->clientid != client->clientid)
+			{
+				send_client->writer.BeginPacket(Opcode_Reliable);
+				send_client->writer.Write(it->second.client->nonce(), true);
+				send_client->writer.BeginPayload(Tag_JoinGame);
+				send_client->writer.Write(joinGameWriter);
+				send_client->writer.End();
+
+				SendTo(it->second.client);
+
+				client->writer.WritePackedInt32(send_client->clientid);
+			}
+		}
+
+		client->writer.End();
+		client->writer.BeginPayload(Tag_AlterGame);
+		client->writer.Write(code);
+		client->writer.Write((char)1);
+		client->writer.Write(found_room.is_public);
+		client->writer.End();
+
+		SendTo(client);
 		break;
+	}
 	case Tag_StartGame:
+	{
 		break;
+	}
 	case Tag_RemoveGame:
 		break;
 	case Tag_RemovePlayer:
 		break;
 	case Tag_GameData:
 	case Tag_GameDataTo:
+	{
 		int code;
 		int recipient;
 
@@ -273,6 +369,7 @@ bool CPPolusServer::ParsePayload(RemoteClient& client, BinaryReader& reader)
 		}
 
 		break;
+	}
 	case Tag_JoinedGame:
 		break;
 	case Tag_EndGame:
@@ -291,14 +388,12 @@ bool CPPolusServer::ParsePayload(RemoteClient& client, BinaryReader& reader)
 		break;
 	}
 
-	reader.Goto(payload_start + payloadlen);
-
 	return true;
 }
 
-bool CPPolusServer::SendTo(RemoteClient& client, unsigned char* buf, unsigned int size)
+bool CPPolusServer::SendTo(RemoteClient* client, unsigned char* buf, unsigned int size)
 {
-	if (sendto(sock, reinterpret_cast<const char*>(buf), size, 0, (struct sockaddr*)client.remote, sizeof(*client.remote)) == SOCKET_ERROR)
+	if (sendto(sock, reinterpret_cast<const char*>(buf), size, 0, (struct sockaddr*)client->remote, sizeof(*client->remote)) == SOCKET_ERROR)
 	{
 		printf("Error sending packet: %i\n", WSAGetLastError());
 		return false;
@@ -307,61 +402,61 @@ bool CPPolusServer::SendTo(RemoteClient& client, unsigned char* buf, unsigned in
 	return true;
 }
 
-bool CPPolusServer::SendTo(RemoteClient& client)
+bool CPPolusServer::SendTo(RemoteClient* client)
 {
-	client.writer.FitToSize();
+	client->writer.FitToSize();
 
-	if (!SendTo(client, client.writer.data, client.writer.size))
+	if (!SendTo(client, client->writer.data, client->writer.size))
 	{
-		client.writer.clear();
+		client->writer.clear();
 		return false;
 	}
 
-	client.writer.clear();
+	client->writer.clear();
 	return true;
 }
 
-bool CPPolusServer::SendRepeat(RemoteClient& client, unsigned char* buf, size_t size, unsigned short nonce)
+bool CPPolusServer::SendRepeat(RemoteClient* client, unsigned char* buf, size_t size, unsigned short nonce)
 {
 	if (!(SendTo(client, buf, size)))
 		return false;
 
 	PendingTransmittedPacket packet = AppendSentReliable(client, nonce);
-	pending.push_back(std::make_pair(client, packet));
+	pending.push_back(std::make_pair(*client, packet));
 
 	return true;
 }
 
-bool CPPolusServer::SendRepeat(RemoteClient& client, unsigned short nonce)
+bool CPPolusServer::SendRepeat(RemoteClient* client, unsigned short nonce)
 {
-	client.writer.FitToSize();
+	client->writer.FitToSize();
 
-	if (!SendRepeat(client, client.writer.data, client.writer.size, nonce))
+	if (!SendRepeat(client, client->writer.data, client->writer.size, nonce))
 	{
-		client.writer.clear();
+		client->writer.clear();
 		return false;
 	}
 
-	client.writer.clear();
+	client->writer.clear();
 	return true;
 }
 
-bool CPPolusServer::Acknowledge(RemoteClient& client, unsigned short nonce)
+bool CPPolusServer::Acknowledge(RemoteClient* client, unsigned short nonce)
 {
-	client.writer.BeginPacket(Opcode_Acknowledge);
-	client.writer.Write(nonce, true);
-	client.writer.Write(CalculateMissing(client));
+	client->writer.BeginPacket(Opcode_Acknowledge);
+	client->writer.Write(nonce, true);
+	client->writer.Write(CalculateMissing(client));
 
 	return SendTo(client);
 }
 
-bool CPPolusServer::SetAcknowledged(RemoteClient& client, unsigned short nonce)
+bool CPPolusServer::SetAcknowledged(RemoteClient* client, unsigned short nonce)
 {
-	for (unsigned int i = 0; i < min(client.sent.size(), 8); i++)
+	for (unsigned int i = 0; i < min(client->sent.size(), 8); i++)
 	{
-		if (client.sent[i].nonce == nonce)
+		if (client->sent[i].nonce == nonce)
 		{
-			client.sent[i].received = true;
+			client->sent[i].received = true;
 			return true;
 		}
 	}
@@ -369,43 +464,43 @@ bool CPPolusServer::SetAcknowledged(RemoteClient& client, unsigned short nonce)
 	return false;
 }
 
-PendingTransmittedPacket CPPolusServer::AppendSentReliable(RemoteClient& client, unsigned short nonce)
+PendingTransmittedPacket CPPolusServer::AppendSentReliable(RemoteClient* client, unsigned short nonce)
 {
 	PendingTransmittedPacket packet{ nonce, false };
-	client.sent.push_front(packet);
+	client->sent.push_front(packet);
 
-	if (client.sent.size() > 8)
+	if (client->sent.size() > 8)
 	{
-		client.sent.pop_back();
+		client->sent.pop_back();
 	}
 
 	return packet;
 }
 
-PendingTransmittedPacket CPPolusServer::AppendReceivedReliable(RemoteClient& client, unsigned short nonce)
+PendingTransmittedPacket CPPolusServer::AppendReceivedReliable(RemoteClient* client, unsigned short nonce)
 {
 	PendingTransmittedPacket packet{ nonce, false };
-	client.received.push_front(packet);
+	client->received.push_front(packet);
 
-	if (client.received.size() > 8)
+	if (client->received.size() > 8)
 	{
-		client.received.pop_back();
+		client->received.pop_back();
 	}
 
 	return packet;
 }
 
-unsigned char CPPolusServer::CalculateMissing(RemoteClient& client)
+unsigned char CPPolusServer::CalculateMissing(RemoteClient* client)
 {
 	unsigned char missing = 0;
 
 	for (size_t i = 0; i < 8; i++)
 	{
-		if (i >= client.sent.size())
+		if (i >= client->sent.size())
 		{
 			missing |= 1 << i;
 		}
-		else if (client.sent[i].received)
+		else if (client->sent[i].received)
 		{
 			missing |= 1 << i;
 		}
@@ -414,20 +509,36 @@ unsigned char CPPolusServer::CalculateMissing(RemoteClient& client)
 	return missing;
 }
 
-bool CPPolusServer::Disconnect(RemoteClient& client, char reason, std::string message)
+bool CPPolusServer::Disconnect(RemoteClient* client, char reason, std::string message)
 {
-	BinaryWriter writer(1, true);
-	writer.Write((char)0x09);
+	client->writer.BeginPacket(Opcode_Disconnect);
 
 	if (reason != Disconnect_NoReason)
 	{
-		writer.Write((char)reason);
+		client->writer.Write((char)reason);
 
 		if (reason == Disconnect_Custom)
-		{
-			writer.WriteString(message);
-		}
+			client->writer.WriteString(message);
 	}
+
+	SendTo(client);
+
+	return true;
+}
+
+bool CPPolusServer::JoinError(RemoteClient* client, char reason)
+{
+	client->writer.BeginPacket(Opcode_Reliable);
+	client->writer.Write(client->nonce(), true);
+	client->writer.BeginPayload(Tag_JoinGame);
+
+	if (reason != Disconnect_NoReason)
+	{
+		client->writer.Write((char)reason);
+		for (int i = 0; i < 3; i++) client->writer.Write(0);
+	}
+
+	SendTo(client);
 
 	return true;
 }

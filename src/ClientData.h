@@ -1,6 +1,8 @@
 #pragma once
 
+#include "RemoteClient.h"
+
 struct ClientData
 {
-	unsigned int clientid;
+	RemoteClient* client;
 };

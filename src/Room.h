@@ -10,6 +10,9 @@ struct Room
 	int code;
 	GameSettings settings;
 	bool is_public;
+	bool started;
+
+	int hostid;
 
 	std::map<int, ClientData> clients;
 };

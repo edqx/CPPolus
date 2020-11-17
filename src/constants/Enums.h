@@ -52,3 +52,17 @@ enum Tag
 	Tag_ReselectServer = 14,
 	Tag_GetGameListV2 = 16,
 };
+
+enum MapBitfield
+{
+	MapBit_TheSkeld = 1,
+	MapBit_MiraHQ = 2,
+	MapBit_Polus = 4
+};
+
+enum Maps
+{
+	Map_TheSkeld = 1,
+	Map_MiraHQ = 2,
+	Map_Polus = 3
+};

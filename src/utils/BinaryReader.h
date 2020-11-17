@@ -52,4 +52,5 @@ public:
 	}
 
 	bool ReadPackedInt32(int* val);
+	bool ReadMessage(size_t len, char* buf);
 };

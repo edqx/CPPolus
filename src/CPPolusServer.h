@@ -53,34 +53,33 @@ class CPPolusServer : public Singleton<CPPolusServer>
 
 	std::vector<std::pair<RemoteClient, PendingTransmittedPacket>> pending;
 
-	bool IdentifyClient(RemoteClient& client, std::string username, int version);
+	bool IdentifyClient(RemoteClient* client, std::string username, int version);
 
 	bool OnMessageReceived(sockaddr_in& remote, char* bytes, int bytes_received);
-	bool ParsePayload(RemoteClient& remote, BinaryReader& reader);
-	bool ParseMessage(RemoteClient& remote, BinaryReader& reader);
+	bool ParsePayload(RemoteClient* remote, unsigned short payloadlen, unsigned short tag, BinaryReader& reader);
+	bool ParseMessage(RemoteClient* remote, BinaryReader& reader);
 	bool GetOrCreateClient(sockaddr_in& remote, RemoteClient* client);
 	bool BeginPing();
 
-	bool Acknowledge(RemoteClient& client, unsigned short nonce);
-	bool SetAcknowledged(RemoteClient& client, unsigned short nonce);
-	PendingTransmittedPacket AppendSentReliable(RemoteClient& client, unsigned short nonce);
-	PendingTransmittedPacket AppendReceivedReliable(RemoteClient& client, unsigned short nonce);
+	bool Acknowledge(RemoteClient* client, unsigned short nonce);
+	bool SetAcknowledged(RemoteClient* client, unsigned short nonce);
+	PendingTransmittedPacket AppendSentReliable(RemoteClient* client, unsigned short nonce);
+	PendingTransmittedPacket AppendReceivedReliable(RemoteClient* client, unsigned short nonce);
 
-	unsigned char CalculateMissing(RemoteClient& client);
-
-	bool PlayerJoin(Room& room, RemoteClient& client);
+	unsigned char CalculateMissing(RemoteClient* client);
 public:
 	CPPolusServer();
 
 	bool Bind(unsigned short _port = 22023, char _host[4] = { 0 });
 	bool Listen();
 
-	bool SendTo(RemoteClient& client, unsigned char* buf, size_t size);
-	bool SendTo(RemoteClient& client);
-	bool Broadcast(std::map<int, ClientData> clients, unsigned char* buf, size_t size);
-	bool Broadcast(std::map<int, ClientData> clients, PacketWriter& packet);
-	bool Broadcast(std::map<int, ClientData> clients);
-	bool SendRepeat(RemoteClient& client, unsigned char* buf, size_t size, unsigned short nonce);
-	bool SendRepeat(RemoteClient& client, unsigned short nonce);
-	bool Disconnect(RemoteClient& client, char reason = 0, std::string message = "");
+	bool SendTo(RemoteClient* client, unsigned char* buf, size_t size);
+	bool SendTo(RemoteClient* client);
+	bool Broadcast(std::map<int, ClientData> clients, unsigned char* buf, size_t size, std::vector<ClientData> exclude);
+	bool Broadcast(std::map<int, ClientData> clients, PacketWriter& packet, std::vector<ClientData> exclude);
+	bool Broadcast(std::map<int, ClientData> clients, std::vector<ClientData> exclude);
+	bool SendRepeat(RemoteClient* client, unsigned char* buf, size_t size, unsigned short nonce);
+	bool SendRepeat(RemoteClient* client, unsigned short nonce);
+	bool Disconnect(RemoteClient* client, char reason = 0, std::string message = "");
+	bool JoinError(RemoteClient* client, char reason = 0);
 };

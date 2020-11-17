@@ -87,3 +87,14 @@ bool BinaryReader::ReadPackedInt32(int* val)
 
 	return true;
 }
+
+bool BinaryReader::ReadMessage(size_t len, char* buf)
+{
+	if (!buf)
+		return false;
+	
+	memcpy(buf, &data[cursor], len);
+	cursor += len;
+
+	return true;
+}

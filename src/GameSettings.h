@@ -5,7 +5,7 @@
 struct GameSettings
 {
 	char version;
-	char maxPlayers;
+	unsigned char maxPlayers;
 	unsigned int language;
 	char mapID;
 	float playerSpeed;
